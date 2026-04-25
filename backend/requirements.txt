@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+motor
+pymongo[srv]
+redis
+python-dotenv
+pydantic
+pandas
+numpy
