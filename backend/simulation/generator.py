@@ -1,10 +1,10 @@
 """
-Simulation engine — two independent instances (smart / naive) run in parallel
-so the frontend can compare them in real time.
+Simulation engine.
 
-Box arrival rate: 1 000 boxes/hour = 1 box every 3.6 s (simulation time).
-Each box is pre-generated with a deterministic random seed so both engines
-receive the *same* box stream and the comparison is fair.
+Three independent instances (smart / naive / optimal) all receive the same
+deterministic box stream so comparisons are fair.
+
+Box arrival rate: 1 000 boxes / hour = 1 box every 3.6 simulated seconds.
 """
 
 from __future__ import annotations
@@ -12,8 +12,9 @@ from __future__ import annotations
 import csv as csv_module
 import random
 import uuid
+from collections import defaultdict
 from decimal import Decimal
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from silo.model import (
     AISLES, SIDES, Y_RANGE, X_RANGE,
@@ -25,6 +26,13 @@ from silo.output_algo import (
     retrieve_boxes_smart, retrieve_boxes_naive,
     select_active_destinations, naive_select_destinations,
 )
+from silo.optimal_algo import (
+    place_box_optimal, EMATracker,
+    retrieve_boxes_hungarian, select_active_pallets_ema,
+)
+
+BOXES_PER_HOUR = 1_000
+SECONDS_PER_BOX = 3600 / BOXES_PER_HOUR  # 3.6 s
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -38,7 +46,7 @@ def make_destination_pool(n: int, seed: int = 42) -> List[str]:
 
 
 def _gen_box(dest: str, rng: random.Random) -> str:
-    src = "".join(str(rng.randint(0, 9)) for _ in range(7))
+    src  = "".join(str(rng.randint(0, 9)) for _ in range(7))
     bulk = "".join(str(rng.randint(0, 9)) for _ in range(5))
     return f"{src}{dest}{bulk}"
 
@@ -60,24 +68,16 @@ def load_csv_state(
     dest_pool: List[str],
     seed: int = 0,
 ) -> int:
-    """
-    Populate *grid* from the CSV.
-    Assigns a random destination from *dest_pool* to every existing box so
-    they participate in pallet formation.
-    Returns number of occupied cells loaded.
-    """
     rng = random.Random(seed)
     count = 0
     with open(csv_path, "r") as f:
         for row in csv_module.DictReader(f):
-            pos = row["posicion"].strip()
+            pos   = row["posicion"].strip()
             label = row["etiqueta"].strip()
             if label:
-                raw = str(int(Decimal(label))).zfill(20)
+                raw  = str(int(Decimal(label))).zfill(20)
                 dest = rng.choice(dest_pool)
-                # Keep source + bulk; inject destination
-                code = raw[:7] + dest + raw[15:]
-                grid[pos] = code
+                grid[pos] = raw[:7] + dest + raw[15:]
                 count += 1
     return count
 
@@ -85,29 +85,42 @@ def load_csv_state(
 # ── engine ────────────────────────────────────────────────────────────────────
 
 class SimulationEngine:
-    def __init__(self, use_smart: bool = True):
-        self.use_smart = use_smart
-        self.grid: Dict[str, Optional[str]] = {}
-        self.shuttles: Dict[str, int] = {}
-        self.active_pallets: Dict[str, List[str]] = {}   # dest → [box_codes]
-        self.completed_pallets: List[Dict] = []
-        self.destinations: List[str] = []
-        self.dest_index: Dict[str, int] = {}             # dest → colour index
-        self.total_input_time: float = 0.0
-        self.total_output_time: float = 0.0
-        self.boxes_placed: int = 0
-        self.boxes_arrived: int = 0
-        self.boxes_retrieved: int = 0
-        self.is_loaded: bool = False
-        self.is_running: bool = False
-        self._box_seq: List[str] = []
-        self._seq_idx: int = 0
-        self._csv_path: str = ""
+    """
+    mode = "smart"   → smart placement + smart retrieval + top-N pallet selection
+    mode = "naive"   → linear placement + linear retrieval + FIFO pallet selection
+    mode = "optimal" → hot/cold placement + Hungarian retrieval + EMA pallet selection
+    """
 
-    # ── lifecycle ─────────────────────────────────────────────────────────────
+    def __init__(self, mode: str = "smart"):
+        self.mode = mode
+        # legacy alias
+        self.use_smart = (mode == "smart")
+        self._reset_state()
+
+    def _reset_state(self) -> None:
+        self.grid:               Dict[str, Optional[str]] = {}
+        self.shuttles:           Dict[str, int]            = {}
+        self.active_pallets:     Dict[str, List[str]]      = {}
+        self.completed_pallets:  List[Dict]                = []
+        self.destinations:       List[str]                 = []
+        self.dest_index:         Dict[str, int]            = {}
+        self.total_input_time:   float = 0.0
+        self.total_output_time:  float = 0.0
+        self.boxes_placed:       int   = 0
+        self.boxes_arrived:      int   = 0
+        self.boxes_retrieved:    int   = 0
+        self.is_loaded:          bool  = False
+        self.is_running:         bool  = False
+        self._box_seq:           List[str] = []
+        self._seq_idx:           int   = 0
+        self._csv_path:          str   = ""
+        # optimal-mode extras
+        self.ema = EMATracker(alpha=0.3) if self.mode == "optimal" else None
 
     def reset(self) -> None:
-        self.__init__(use_smart=self.use_smart)  # type: ignore[misc]
+        self._reset_state()
+
+    # ── initialization ────────────────────────────────────────────────────────
 
     def initialize(
         self,
@@ -116,27 +129,19 @@ class SimulationEngine:
         csv_path: str = "",
         box_seq: Optional[List[str]] = None,
     ) -> None:
-        """
-        Setup simulation.
-        If *box_seq* is provided it is reused (allows smart/naive to share the
-        same stream).
-        """
         self.reset()
-        self._csv_path = csv_path
+        self._csv_path   = csv_path
         self.destinations = make_destination_pool(num_destinations)
-        self.dest_index = {d: i for i, d in enumerate(self.destinations)}
+        self.dest_index   = {d: i for i, d in enumerate(self.destinations)}
 
-        # Shuttles start at X=0
         for a in AISLES:
             for y in Y_RANGE:
                 self.shuttles[shuttle_key(a, y)] = 0
 
-        # Build empty grid then overlay CSV
         self.grid = _build_empty_grid()
         if csv_path:
             load_csv_state(csv_path, self.grid, self.destinations)
 
-        # Pre-generate the shared box sequence
         if box_seq is not None:
             self._box_seq = box_seq
         else:
@@ -144,56 +149,82 @@ class SimulationEngine:
             self._box_seq = [_gen_box(rng.choice(self.destinations), rng)
                              for _ in range(total_boxes)]
 
-        self.is_loaded = True
+        self.is_loaded  = True
         self.is_running = True
 
     # ── stepping ──────────────────────────────────────────────────────────────
 
     def step(self, n_boxes: int = 100) -> Dict:
-        """Process up to *n_boxes* new arrivals, then run one retrieval pass."""
         if not self.is_loaded:
             return {"error": "not_initialized"}
 
-        # ── Place incoming boxes ──
+        # Pre-compute things the optimal algo needs once per step
+        if self.mode == "optimal":
+            active_dests_set = set(self.active_pallets.keys())
+            dest_counts: Dict[str, int] = defaultdict(int)
+            dest_set = set(self.destinations)
+            for code in self.grid.values():
+                if code:
+                    d = code[7:15]
+                    if d in dest_set:
+                        dest_counts[d] += 1
+
+        # ── Place incoming boxes ──────────────────────────────────────────────
         for _ in range(n_boxes):
             if self._seq_idx >= len(self._box_seq):
                 break
             code = self._box_seq[self._seq_idx]
-            self._seq_idx += 1
+            self._seq_idx   += 1
             self.boxes_arrived += 1
 
-            if self.use_smart:
-                pos, cost = place_box_smart(
-                    self.grid, self.shuttles, code, self.destinations
-                )
-            else:
+            if self.mode == "smart":
+                pos, cost = place_box_smart(self.grid, self.shuttles, code, self.destinations)
+            elif self.mode == "naive":
                 pos, cost = place_box_naive(self.grid, self.shuttles)
+            else:  # optimal
+                pos, cost = place_box_optimal(
+                    self.grid, self.shuttles, code, self.destinations,
+                    active_dests_set, dest_counts,
+                )
+                if self.ema:
+                    self.ema.record_arrival(code[7:15])
 
             if pos:
                 self.grid[pos] = code
-                self.boxes_placed += 1
+                self.boxes_placed     += 1
                 self.total_input_time += cost
 
-        # ── Refresh active pallets ──
-        if self.use_smart:
+        # EMA clock tick
+        if self.mode == "optimal" and self.ema:
+            self.ema.tick_if_needed(self.boxes_arrived * SECONDS_PER_BOX)
+
+        # ── Refresh active pallets ────────────────────────────────────────────
+        if self.mode == "smart":
             self.active_pallets = select_active_destinations(
                 self.grid, self.active_pallets, self.destinations
             )
-        else:
+        elif self.mode == "naive":
             self.active_pallets = naive_select_destinations(
                 self.active_pallets, self.destinations
             )
+        else:  # optimal
+            sim_time = self.boxes_arrived * SECONDS_PER_BOX
+            self.active_pallets = select_active_pallets_ema(
+                self.grid, self.ema, self.active_pallets, self.destinations, sim_time
+            )
 
-        # ── Retrieve boxes ──
-        if self.use_smart:
+        # ── Retrieve boxes ────────────────────────────────────────────────────
+        if self.mode == "smart":
             ops = retrieve_boxes_smart(self.grid, self.shuttles, self.active_pallets)
-        else:
+        elif self.mode == "naive":
             ops = retrieve_boxes_naive(self.grid, self.shuttles, self.active_pallets)
+        else:  # optimal
+            ops = retrieve_boxes_hungarian(self.grid, self.shuttles, self.active_pallets)
 
-        running_out_time = self.total_output_time
+        running_out = self.total_output_time
         for code, pos, cost in ops:
             self.grid[pos] = None
-            running_out_time += cost
+            running_out += cost
             dest = code[7:15]
             if dest not in self.active_pallets:
                 self.active_pallets[dest] = []
@@ -201,63 +232,64 @@ class SimulationEngine:
             self.boxes_retrieved += 1
 
             if len(self.active_pallets[dest]) >= PALLET_SIZE:
-                self.completed_pallets.append(
-                    {
-                        "id": str(uuid.uuid4())[:8],
-                        "destination": dest,
-                        "boxes": self.active_pallets[dest].copy(),
-                        "completed_at": running_out_time,
-                    }
-                )
+                self.completed_pallets.append({
+                    "id":           str(uuid.uuid4())[:8],
+                    "destination":  dest,
+                    "boxes":        self.active_pallets[dest].copy(),
+                    "completed_at": running_out,
+                })
                 del self.active_pallets[dest]
 
-        self.total_output_time = running_out_time
+        self.total_output_time = running_out
         return self.get_metrics()
 
     def run_full(self, batch: int = 100) -> Dict:
-        """Place all queued boxes then do extra retrieval passes to drain pallets."""
         while self._seq_idx < len(self._box_seq):
             self.step(batch)
-        # Extra retrieval-only passes (n_boxes=0 skips placement, still retrieves)
-        for _ in range(20):
+        for _ in range(20):        # extra retrieval-only passes
             self.step(0)
         return self.get_metrics()
 
-    # ── metrics & state ───────────────────────────────────────────────────────
+    # ── properties ────────────────────────────────────────────────────────────
 
     @property
     def is_done(self) -> bool:
-        """True once all queued boxes have been processed."""
         return self._seq_idx >= len(self._box_seq)
 
+    # ── metrics & state ───────────────────────────────────────────────────────
+
     def get_metrics(self) -> Dict:
-        n = len(self.completed_pallets)
-        full = sum(1 for p in self.completed_pallets if len(p["boxes"]) >= PALLET_SIZE)
+        n    = len(self.completed_pallets)
+        # % of retrieved boxes that ended up in a completed pallet
+        # (vs wasted on partial pallets still in progress)
+        boxes_in_completed = n * PALLET_SIZE
+        retrieval_efficiency = round(
+            boxes_in_completed / max(self.boxes_retrieved, 1) * 100, 1
+        )
         total_time = self.total_input_time + self.total_output_time
 
         return {
-            "boxes_arrived": self.boxes_arrived,
-            "boxes_placed": self.boxes_placed,
-            "boxes_retrieved": self.boxes_retrieved,
-            "completed_pallets": n,
-            "full_pallets_pct": round((full / max(n, 1)) * 100, 1),
-            "total_input_time": round(self.total_input_time, 1),
-            "total_output_time": round(self.total_output_time, 1),
-            "total_time": round(total_time, 1),
+            "boxes_arrived":      self.boxes_arrived,
+            "boxes_placed":       self.boxes_placed,
+            "boxes_retrieved":    self.boxes_retrieved,
+            "completed_pallets":  n,
+            "full_pallets_pct":   retrieval_efficiency,
+            "total_input_time":   round(self.total_input_time, 1),
+            "total_output_time":  round(self.total_output_time, 1),
+            "total_time":         round(total_time, 1),
             "avg_time_per_pallet": round(self.total_output_time / max(n, 1), 1),
             "throughput_per_hour": round(n * 3600 / max(self.total_output_time, 1), 2),
-            "occupied_cells": sum(1 for v in self.grid.values() if v is not None),
-            "total_cells": len(self.grid),
+            "occupied_cells":     sum(1 for v in self.grid.values() if v is not None),
+            "total_cells":        len(self.grid),
             "active_pallets": [
                 {"destination": d, "count": len(boxes), "target": PALLET_SIZE}
                 for d, boxes in self.active_pallets.items()
             ],
-            "is_done": self.is_done,
+            "is_done":  self.is_done,
             "progress": round(self._seq_idx / max(len(self._box_seq), 1) * 100, 1),
         }
 
     def get_aisle_state(self, aisle: str) -> Dict:
-        """Silo grid for one aisle — used by the visualiser."""
         cells: Dict[str, Dict] = {}
         for pos, code in self.grid.items():
             if not pos.startswith(aisle):
@@ -265,13 +297,12 @@ class SimulationEngine:
             a, s, x, y, z = parse_pos(pos)
             dest_idx = None
             if code:
-                d = code[7:15]
-                dest_idx = self.dest_index.get(d)
-            cells[pos] = {"code": code, "dest_idx": dest_idx, "x": x, "y": y, "z": z, "side": s}
-
+                dest_idx = self.dest_index.get(code[7:15])
+            cells[pos] = {"code": code, "dest_idx": dest_idx,
+                          "x": x, "y": y, "z": z, "side": s}
         return {
-            "aisle": aisle,
-            "cells": cells,
+            "aisle":   aisle,
+            "cells":   cells,
             "shuttles": {
                 shuttle_key(aisle, y): self.shuttles.get(shuttle_key(aisle, y), 0)
                 for y in Y_RANGE
@@ -284,16 +315,18 @@ class SimulationEngine:
         for a in AISLES:
             for y in Y_RANGE:
                 sk = shuttle_key(a, y)
-                shuttle_data[sk] = {"aisle": a, "y_level": y, "current_x": self.shuttles.get(sk, 0)}
+                shuttle_data[sk] = {"aisle": a, "y_level": y,
+                                    "current_x": self.shuttles.get(sk, 0)}
         return {
-            "grid": {p: c for p, c in self.grid.items()},
-            "shuttles": shuttle_data,
-            "dest_index": self.dest_index,
+            "grid":         {p: c for p, c in self.grid.items()},
+            "shuttles":     shuttle_data,
+            "dest_index":   self.dest_index,
             "destinations": self.destinations,
         }
 
 
 # ── module-level singletons ───────────────────────────────────────────────────
 
-smart_engine = SimulationEngine(use_smart=True)
-naive_engine = SimulationEngine(use_smart=False)
+smart_engine   = SimulationEngine(mode="smart")
+naive_engine   = SimulationEngine(mode="naive")
+optimal_engine = SimulationEngine(mode="optimal")

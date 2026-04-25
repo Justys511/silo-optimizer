@@ -48,19 +48,29 @@ export interface SimStatus {
   status: string;
   smart: Metrics;
   naive: Metrics;
+  optimal: Metrics;
 }
 
 export interface ChartEntry {
   metric: string;
-  smart: number;
   naive: number;
+  smart: number;
+  optimal: number;
   unit: string;
 }
 
+export interface Improvement {
+  full_pallets_pct: number;
+  avg_time_per_pallet: number;
+  throughput_per_hour: number;
+}
+
 export interface CompareResult {
-  smart: Metrics;
   naive: Metrics;
-  improvement: Record<string, number>;
+  smart: Metrics;
+  optimal: Metrics;
+  improvement_smart_vs_naive: Improvement;
+  improvement_optimal_vs_smart: Improvement;
   chart_data: ChartEntry[];
 }
 
@@ -75,15 +85,24 @@ export const siloApi = {
     }),
 
   step: (nBoxes = 100) =>
-    api.post<{ smart: Metrics; naive: Metrics }>("/api/simulation/step", {
-      n_boxes: nBoxes,
-    }),
+    api.post<{ smart: Metrics; naive: Metrics; optimal: Metrics }>(
+      "/api/simulation/step",
+      { n_boxes: nBoxes },
+    ),
 
   runFull: () => api.post("/api/simulation/run-full"),
+
+  runOptimal: () => api.post("/api/simulation/run-optimal"),
 
   getStatus: () => api.get<SimStatus>("/api/simulation/status"),
 
   compare: () => api.get<CompareResult>("/api/simulation/compare"),
+
+  compareAll: (numDest = 20, totalBoxes = 500) =>
+    api.get<CompareResult>("/api/simulation/compare-all", {
+      params: { num_destinations: numDest, total_boxes: totalBoxes },
+      timeout: 60_000,
+    }),
 
   reset: () => api.post("/api/simulation/reset"),
 
