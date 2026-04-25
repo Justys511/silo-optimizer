@@ -5,6 +5,7 @@ import {
 import SiloGrid from "./components/SiloGrid";
 import Dashboard from "./components/Dashboard";
 import Controls from "./components/Controls";
+import CompareModal from "./components/CompareModal";
 
 const POLL_MS = 2000;
 type ViewMode = "smart" | "naive" | "optimal";
@@ -22,6 +23,7 @@ export default function App() {
   const [impSmartVsNaive,  setImpSmartVsNaive]  = useState<Improvement | null>(null);
   const [impOptimalVsSmart, setImpOptimalVsSmart] = useState<Improvement | null>(null);
 
+  const [showCompare,  setShowCompare]  = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isDone,    setIsDone]    = useState(false);
   const [error,     setError]     = useState<string | null>(null);
@@ -100,6 +102,7 @@ export default function App() {
       setOptimalMetrics(res.data.optimal);
       setImpSmartVsNaive(res.data.improvement_smart_vs_naive);
       setImpOptimalVsSmart(res.data.improvement_optimal_vs_smart);
+      setShowCompare(true);
     } catch (e: any) { setError(e?.response?.data?.detail ?? e.message); }
   };
 
@@ -138,7 +141,7 @@ export default function App() {
         {/* View-mode toggle */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6,
                       background: "#1f2937", borderRadius: 8, padding: "4px 6px" }}>
-          {(["smart", "naive", "optimal"] as ViewMode[]).map((m) => (
+          {(["optimal", "smart", "naive"] as ViewMode[]).map((m) => (
             <button key={m} onClick={() => setViewMode(m)} style={{
               padding: "5px 13px", borderRadius: 6, border: "none", cursor: "pointer",
               background: viewMode === m ? ALGO_COLORS[m] + "cc" : "transparent",
@@ -172,11 +175,17 @@ export default function App() {
           smartMetrics={smartMetrics}
           naiveMetrics={naiveMetrics}
           optimalMetrics={optimalMetrics}
+        />
+      </div>
+
+      {showCompare && (
+        <CompareModal
           chartData={chartData}
           impSmartVsNaive={impSmartVsNaive}
           impOptimalVsSmart={impOptimalVsSmart}
+          onClose={() => setShowCompare(false)}
         />
-      </div>
+      )}
 
       <div style={{ background: "#1f2937", borderRadius: 10, padding: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "#d1d5db",

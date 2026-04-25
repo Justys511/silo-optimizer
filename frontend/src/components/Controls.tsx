@@ -10,8 +10,8 @@ interface Props {
   isDone: boolean;
 }
 
-const DEST_OPTIONS = [20, 40, 80];
-const BOX_OPTIONS = [200, 500, 1000, 2000];
+const DEST_OPTIONS = [20, 40, 80, 100, 400];
+const BOX_OPTIONS = [200, 500, 1000, 2000, 7680];
 
 export default function Controls({
   onStart, onStep, onRunFull, onReset, onCompare, isRunning, isDone,

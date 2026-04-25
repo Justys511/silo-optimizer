@@ -1,24 +1,12 @@
 import React from "react";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer,
-} from "recharts";
-import { Metrics, ChartEntry, Improvement } from "../api/siloApi";
+import { Metrics } from "../api/siloApi";
 
-// ── algo colour palette ───────────────────────────────────────────────────────
-const ALGO_COLORS = {
-  naive:   "#ef4444",   // red
-  smart:   "#f59e0b",   // amber
-  optimal: "#22c55e",   // green
-};
+const ALGO_COLORS = { naive: "#ef4444", smart: "#f59e0b", optimal: "#22c55e" };
 
 interface Props {
   smartMetrics:   Metrics | null;
   naiveMetrics:   Metrics | null;
   optimalMetrics: Metrics | null;
-  chartData:      ChartEntry[];
-  impSmartVsNaive?:   Improvement | null;
-  impOptimalVsSmart?: Improvement | null;
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -93,7 +81,6 @@ function PalletBar({ dest, count, target }: { dest: string; count: number; targe
 
 export default function Dashboard({
   smartMetrics: s, naiveMetrics: n, optimalMetrics: o,
-  chartData, impSmartVsNaive: isn, impOptimalVsSmart: ios,
 }: Props) {
   const any = s || n || o;
 
@@ -126,90 +113,66 @@ export default function Dashboard({
       </div>
 
       {/* ── Metric cards ── */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         {row("Completed Pallets",   "completed_pallets")}
         {row("Full Pallets %",      "full_pallets_pct",    (v) => `${v}%`)}
         {row("Throughput (p/hr)",   "throughput_per_hour", (v) => v)}
         {row("Avg Time/Pallet (s)", "avg_time_per_pallet", (v) => Math.round(v))}
-        {row("Boxes Placed",        "boxes_placed",        (v) => v, "smart engine")}
-        {row("Silo Occupancy",      "occupied_cells",      (v) =>
-          s ? `${Math.round((v / s.total_cells) * 100)}%` : "—")}
       </div>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-
-        {/* ── Active pallets (smart) ── */}
-        <div style={{ background: "#1f2937", borderRadius: 10, padding: 14, minWidth: 220, flex: "0 0 auto" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "#d1d5db" }}>
-            Active Pallets — Smart
-          </div>
-          {!s || s.active_pallets.length === 0
-            ? <div style={{ color: "#6b7280", fontSize: 12 }}>No active pallets</div>
-            : s.active_pallets.map((p) => (
-                <PalletBar key={p.destination} dest={p.destination} count={p.count} target={p.target} />
-              ))}
-        </div>
-
-        {/* ── Comparison chart ── */}
-        <div style={{ background: "#1f2937", borderRadius: 10, padding: 14, flex: 1, minWidth: 340 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "#d1d5db" }}>
-            Naive vs Smart vs Optimal
-          </div>
-          {chartData.length === 0
-            ? <div style={{ color: "#6b7280", fontSize: 12, paddingTop: 16 }}>
-                Click Compare to populate this chart
+      {/* ── Silo status bar ── */}
+      {s && (() => {
+        const occPct = Math.round((s.occupied_cells / s.total_cells) * 100);
+        const dropped = s.boxes_arrived - s.boxes_placed;
+        const dropPct = s.boxes_arrived > 0 ? Math.round(dropped / s.boxes_arrived * 100) : 0;
+        const occColor = occPct >= 95 ? "#ef4444" : occPct >= 80 ? "#f59e0b" : "#22c55e";
+        return (
+          <div style={{ background: "#1f2937", borderRadius: 10, padding: "12px 16px", marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 32, flexWrap: "wrap", alignItems: "center" }}>
+              {/* occupancy */}
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>
+                  <span>Silo Occupancy</span>
+                  <span style={{ color: occColor, fontWeight: 700 }}>{occPct}% · {s.occupied_cells} / {s.total_cells}</span>
+                </div>
+                <div style={{ background: "#374151", borderRadius: 4, height: 8 }}>
+                  <div style={{ width: `${occPct}%`, background: occColor, height: "100%", borderRadius: 4, transition: "width 0.4s" }} />
+                </div>
+                {occPct >= 95 && (
+                  <div style={{ color: "#ef4444", fontSize: 10, marginTop: 3, fontWeight: 600 }}>
+                    ⚠ Silo full — incoming boxes are being dropped
+                  </div>
+                )}
               </div>
-            : <ResponsiveContainer width="100%" height={210}>
-                <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="metric" tick={{ fill: "#9ca3af", fontSize: 10 }} />
-                  <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} />
-                  <Tooltip
-                    contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: 6 }}
-                    labelStyle={{ color: "#e5e7eb" }}
-                    formatter={(val: any, name: any) => [`${val}`, String(name)]}
-                  />
-                  <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
-                  <Bar dataKey="naive"   name="Naive"   fill={ALGO_COLORS.naive}   radius={[3,3,0,0]} />
-                  <Bar dataKey="smart"   name="Smart"   fill={ALGO_COLORS.smart}   radius={[3,3,0,0]} />
-                  <Bar dataKey="optimal" name="Optimal" fill={ALGO_COLORS.optimal} radius={[3,3,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>}
+              {/* dropped boxes */}
+              <div>
+                <div style={{ color: "#9ca3af", fontSize: 11, marginBottom: 2 }}>Boxes Arrived / Placed / Dropped</div>
+                <div style={{ fontSize: 13, fontFamily: "monospace" }}>
+                  <span style={{ color: "#e5e7eb" }}>{s.boxes_arrived}</span>
+                  <span style={{ color: "#6b7280" }}> / </span>
+                  <span style={{ color: "#22c55e" }}>{s.boxes_placed}</span>
+                  <span style={{ color: "#6b7280" }}> / </span>
+                  <span style={{ color: dropped > 0 ? "#ef4444" : "#6b7280", fontWeight: dropped > 0 ? 700 : 400 }}>
+                    {dropped}{dropped > 0 ? ` (${dropPct}%)` : ""}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Active pallets (smart) ── */}
+      <div style={{ background: "#1f2937", borderRadius: 10, padding: 14, marginBottom: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "#d1d5db" }}>
+          Active Pallets — Smart
         </div>
+        {!s || s.active_pallets.length === 0
+          ? <div style={{ color: "#6b7280", fontSize: 12 }}>No active pallets</div>
+          : s.active_pallets.map((p) => (
+              <PalletBar key={p.destination} dest={p.destination} count={p.count} target={p.target} />
+            ))}
       </div>
-
-      {/* ── Improvement summary ── */}
-      {(isn || ios) && (
-        <div style={{ marginTop: 14, display: "flex", gap: 20, flexWrap: "wrap" }}>
-          {isn && (
-            <div style={{ background: "#1f2937", borderRadius: 10, padding: "12px 20px" }}>
-              <div style={{ color: "#9ca3af", fontSize: 11, marginBottom: 8 }}>
-                Smart vs Naive improvement
-              </div>
-              <div style={{ display: "flex", gap: 20 }}>
-                <ImprovementBadge label="Throughput"    pct={isn.throughput_per_hour} />
-                <ImprovementBadge label="Avg Time"      pct={isn.avg_time_per_pallet} lowerIsBetter />
-                <ImprovementBadge label="Full Pallets %" pct={isn.full_pallets_pct} />
-              </div>
-            </div>
-          )}
-          {ios && (
-            <div style={{
-              background: "#1f2937", borderRadius: 10, padding: "12px 20px",
-              border: "1px solid #22c55e44",
-            }}>
-              <div style={{ color: "#22c55e", fontSize: 11, marginBottom: 8, fontWeight: 600 }}>
-                ✦ Optimal vs Smart improvement
-              </div>
-              <div style={{ display: "flex", gap: 20 }}>
-                <ImprovementBadge label="Throughput"    pct={ios.throughput_per_hour} />
-                <ImprovementBadge label="Avg Time"      pct={ios.avg_time_per_pallet} lowerIsBetter />
-                <ImprovementBadge label="Full Pallets %" pct={ios.full_pallets_pct} />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ── Progress bar (smart engine) ── */}
       {s && (
