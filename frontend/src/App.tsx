@@ -27,15 +27,21 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [isDone,    setIsDone]    = useState(false);
   const [error,     setError]     = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const viewModeRef = useRef<ViewMode>(viewMode);
+  const aisleRef    = useRef(selectedAisle);
+
+  useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
+  useEffect(() => { aisleRef.current = selectedAisle; }, [selectedAisle]);
 
   // ── polling ────────────────────────────────────────────────────────────────
+  // fetchState is stable (empty deps) — reads current values via refs so the
+  // polling interval never needs to be recreated when viewMode/aisle changes.
   const fetchState = useCallback(async () => {
     try {
-      const useSmart = viewMode !== "naive";
       const [statusRes, aisleRes] = await Promise.all([
         siloApi.getStatus(),
-        siloApi.getAisleState(selectedAisle, useSmart),
+        siloApi.getAisleState(aisleRef.current, viewModeRef.current),
       ]);
       if (statusRes.data.status !== "not_started") {
         setSmartMetrics(statusRes.data.smart);
@@ -52,7 +58,7 @@ export default function App() {
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? e.message ?? "Connection error");
     }
-  }, [selectedAisle, viewMode]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isRunning) {
@@ -61,9 +67,10 @@ export default function App() {
     }
   }, [isRunning, fetchState]);
 
+  // Immediate re-fetch whenever the view selection changes
   useEffect(() => {
     if (isRunning) fetchState();
-  }, [selectedAisle, viewMode, fetchState, isRunning]);
+  }, [selectedAisle, viewMode, isRunning]); // fetchState is stable, not needed here
 
   // ── handlers ──────────────────────────────────────────────────────────────
   const handleStart = async (numDest: number, totalBoxes: number) => {
@@ -132,8 +139,9 @@ export default function App() {
                     position: "sticky", top: -20, zIndex: 100,
                     background: "#111827", padding: "14px 24px",
                     margin: "-20px -24px 18px" }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 700, color: "#f9fafb" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <img src="/medium.png" alt="Bottom Gear" style={{ height: 100, borderRadius: 6 }} />
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#f9fafb" }}>
             Silo Optimizer
           </h1>
         </div>
@@ -146,7 +154,7 @@ export default function App() {
               padding: "5px 13px", borderRadius: 6, border: "none", cursor: "pointer",
               background: viewMode === m ? ALGO_COLORS[m] + "cc" : "transparent",
               color: "#e5e7eb",
-              fontWeight: viewMode === m ? 700 : 400, fontSize: 12,
+              fontWeight: viewMode === m ? 700 : 400, fontSize: 15,
             }}>
               {m.charAt(0).toUpperCase() + m.slice(1)}
             </button>
@@ -188,13 +196,13 @@ export default function App() {
         />
       )}
 
-      <div style={{ background: "#1f2937", borderRadius: 10, padding: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "#d1d5db",
+      <div style={{ background: "#1f2937", borderRadius: 0, padding: "14px 24px", margin: "0 -24px -20px" }}>
+        <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 12, color: "#d1d5db",
                       display: "flex", alignItems: "center", gap: 8 }}>
           Silo Visualisation
-          <span style={{ fontSize: 11, color: ALGO_COLORS[viewMode],
+          <span style={{ fontSize: 14, color: ALGO_COLORS[viewMode],
                          background: ALGO_COLORS[viewMode] + "22",
-                         padding: "1px 8px", borderRadius: 4 }}>
+                         padding: "2px 10px", borderRadius: 4 }}>
             {viewMode}
           </span>
         </div>

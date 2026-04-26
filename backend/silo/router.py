@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .model import AISLES, SimulationConfig
-from simulation.generator import smart_engine, naive_engine
+from simulation.generator import smart_engine, naive_engine, optimal_engine
 
 router = APIRouter(tags=["silo"])
 
@@ -23,9 +23,9 @@ class RetrieveRequest(BaseModel):
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/state")
-async def get_silo_state(aisle: Optional[str] = None, use_smart: bool = True):
+async def get_silo_state(aisle: Optional[str] = None, mode: str = "smart"):
     """Return silo grid. If *aisle* is supplied, only that aisle is returned."""
-    engine = smart_engine if use_smart else naive_engine
+    engine = naive_engine if mode == "naive" else optimal_engine if mode == "optimal" else smart_engine
     if not engine.is_loaded:
         raise HTTPException(status_code=400, detail="Simulation not initialised — call /api/simulation/start first")
 

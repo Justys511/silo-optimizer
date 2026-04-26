@@ -22,7 +22,7 @@ const COLORS = [
 ];
 
 function destColor(idx: number | null): string {
-  if (idx === null) return "#374151"; // occupied, unknown dest
+  if (idx === null) return "#374151";
   return COLORS[idx % COLORS.length];
 }
 
@@ -38,10 +38,10 @@ const AISLE_LABELS: Record<string, string> = {
   "10": "Aisle 1", "20": "Aisle 2", "30": "Aisle 3", "40": "Aisle 4",
 };
 
-const CELL_W = 14; // px per X column
-const CELL_H = 32; // px per Y row
-const MARGIN_LEFT = 36;
-const MARGIN_TOP = 4;
+const CELL_W = 20;
+const CELL_H = 48;
+const MARGIN_LEFT = 52;
+const MARGIN_TOP  = 6;
 
 export default function SiloGrid({ state, selectedAisle, onAisleChange, useSmart }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -53,8 +53,8 @@ export default function SiloGrid({ state, selectedAisle, onAisleChange, useSmart
     if (!ctx) return;
 
     const W = 60 * CELL_W + MARGIN_LEFT + 4;
-    const H = 8 * CELL_H + MARGIN_TOP + 20;
-    canvas.width = W;
+    const H = 8 * CELL_H + MARGIN_TOP + 28;
+    canvas.width  = W;
     canvas.height = H;
 
     ctx.clearRect(0, 0, W, H);
@@ -63,10 +63,10 @@ export default function SiloGrid({ state, selectedAisle, onAisleChange, useSmart
 
     // Y axis labels
     ctx.fillStyle = "#9ca3af";
-    ctx.font = "11px monospace";
+    ctx.font = "bold 18px monospace";
     for (let y = 1; y <= 8; y++) {
-      const yPx = MARGIN_TOP + (8 - y) * CELL_H + CELL_H / 2 - 5;
-      ctx.fillText(`Y${y}`, 2, yPx + 10);
+      const yPx = MARGIN_TOP + (8 - y) * CELL_H + CELL_H / 2;
+      ctx.fillText(`Y${y}`, 2, yPx + 6);
     }
 
     // Cells
@@ -80,13 +80,13 @@ export default function SiloGrid({ state, selectedAisle, onAisleChange, useSmart
             const pos = `${selectedAisle}${side}${String(x).padStart(2, "0")}${String(y).padStart(2, "0")}${String(z).padStart(2, "0")}`;
             const cell = state.cells[pos];
 
-            const halfH = CELL_H / 2 - 1;
+            const halfH    = CELL_H / 2 - 1;
             const sideOffset = side === "10" ? 0 : CELL_W / 2;
-            const zOffset = z === 1 ? 0 : halfH + 1;
+            const zOffset    = z === 1 ? 0 : halfH + 1;
             const cw = CELL_W / 2 - 1;
             const ch = halfH;
 
-            let color = "#1f2937"; // empty
+            let color = "#1f2937";
             if (cell?.code) {
               color = cell.dest_idx !== null ? destColor(cell.dest_idx) : "#6b7280";
             }
@@ -98,9 +98,9 @@ export default function SiloGrid({ state, selectedAisle, onAisleChange, useSmart
 
         // X label every 10
         if (x % 10 === 0) {
-          ctx.fillStyle = "#4b5563";
-          ctx.font = "9px monospace";
-          ctx.fillText(String(x), xPx + 1, MARGIN_TOP + 8 * CELL_H + 14);
+          ctx.fillStyle = "#6b7280";
+          ctx.font = "14px monospace";
+          ctx.fillText(String(x), xPx + 2, MARGIN_TOP + 8 * CELL_H + 20);
         }
       }
     }
@@ -108,12 +108,12 @@ export default function SiloGrid({ state, selectedAisle, onAisleChange, useSmart
     // Shuttle positions (one per Y)
     const shuttles = state.shuttles;
     for (let y = 1; y <= 8; y++) {
-      const sk = `${selectedAisle}_${y}`;
-      const sx = shuttles[sk] ?? 0;
+      const sk  = `${selectedAisle}_${y}`;
+      const sx  = shuttles[sk] ?? 0;
       const xPx = MARGIN_LEFT + sx * CELL_W;
       const yPx = MARGIN_TOP + (8 - y) * CELL_H;
       ctx.strokeStyle = "#facc15";
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth   = 2;
       ctx.strokeRect(xPx, yPx, CELL_W, CELL_H - 1);
     }
   }, [state, selectedAisle]);
@@ -134,38 +134,39 @@ export default function SiloGrid({ state, selectedAisle, onAisleChange, useSmart
   return (
     <div style={{ fontFamily: "monospace", color: "#e5e7eb" }}>
       {/* Aisle selector */}
-      <div style={{ marginBottom: 8, display: "flex", gap: 8, alignItems: "center" }}>
-        <span style={{ color: "#9ca3af", fontSize: 13 }}>Aisle:</span>
+      <div style={{ marginBottom: 12, display: "flex", gap: 10, alignItems: "center" }}>
+        <span style={{ color: "#9ca3af", fontSize: 17 }}>Aisle:</span>
         {AISLES.map((a) => (
           <button
             key={a}
             onClick={() => onAisleChange(a)}
             style={{
-              padding: "3px 12px",
+              padding: "5px 16px",
               borderRadius: 4,
               border: "none",
               cursor: "pointer",
               background: a === selectedAisle ? "#3b82f6" : "#374151",
               color: "#e5e7eb",
-              fontSize: 13,
+              fontSize: 16,
+              fontWeight: a === selectedAisle ? 700 : 400,
             }}
           >
             {AISLE_LABELS[a]}
           </button>
         ))}
-        <span style={{ marginLeft: 16, color: "#6b7280", fontSize: 12 }}>
-          {useSmart ? "🧠 Smart" : "📋 Naive"} &nbsp;|&nbsp;
+        <span style={{ marginLeft: 16, color: "#6b7280", fontSize: 15 }}>
+          {useSmart ? "Smart" : "Naive"} &nbsp;|&nbsp;
           <span style={{ color: "#facc15" }}>■</span> shuttle
-          &nbsp;|&nbsp;<span style={{ color: "#1f2937", background: "#1f2937", padding: "0 6px" }}>□</span> empty
+          &nbsp;|&nbsp; empty
         </span>
       </div>
 
       {/* Canvas grid */}
-      <div style={{ overflowX: "auto", background: "#111827", borderRadius: 8, padding: 8 }}>
+      <div style={{ background: "#111827", borderRadius: 8, padding: 8 }}>
         {state ? (
-          <canvas ref={canvasRef} style={{ display: "block" }} />
+          <canvas ref={canvasRef} style={{ display: "block", width: "100%", imageRendering: "pixelated" }} />
         ) : (
-          <div style={{ padding: 40, color: "#6b7280", textAlign: "center" }}>
+          <div style={{ padding: 40, color: "#6b7280", textAlign: "center", fontSize: 16 }}>
             Load the CSV to see the silo state
           </div>
         )}
@@ -173,16 +174,16 @@ export default function SiloGrid({ state, selectedAisle, onAisleChange, useSmart
 
       {/* Mini legend */}
       {legend.length > 0 && (
-        <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
           {legend.map(({ label, color }) => (
-            <span key={label} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
-              <span style={{ width: 10, height: 10, background: color, display: "inline-block", borderRadius: 2 }} />
+            <span key={label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 14 }}>
+              <span style={{ width: 13, height: 13, background: color, display: "inline-block", borderRadius: 2 }} />
               {label}
             </span>
           ))}
           {state && Object.values(state.cells).filter((c) => c.dest_idx === null && c.code).length > 0 && (
-            <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
-              <span style={{ width: 10, height: 10, background: "#6b7280", display: "inline-block", borderRadius: 2 }} />
+            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 14 }}>
+              <span style={{ width: 13, height: 13, background: "#6b7280", display: "inline-block", borderRadius: 2 }} />
               Legacy
             </span>
           )}
@@ -191,10 +192,10 @@ export default function SiloGrid({ state, selectedAisle, onAisleChange, useSmart
 
       {/* Stats */}
       {state && (
-        <div style={{ marginTop: 6, fontSize: 11, color: "#6b7280" }}>
+        <div style={{ marginTop: 8, fontSize: 14, color: "#6b7280" }}>
           Aisle {AISLE_LABELS[selectedAisle]} &nbsp;•&nbsp;
           60 × 8 × 2 sides × 2 depths = 1 920 cells &nbsp;•&nbsp;
-          Yellow border = shuttle current position
+          Yellow border = shuttle position
         </div>
       )}
     </div>

@@ -32,7 +32,7 @@ export default function Controls({
         color: disabled ? "#6b7280" : "#fff",
         cursor: disabled ? "not-allowed" : "pointer",
         fontWeight: 600,
-        fontSize: 13,
+        fontSize: 15,
         transition: "background 0.2s",
       }}
     >
@@ -46,14 +46,14 @@ export default function Controls({
     onChange: (v: number) => void,
     label: string,
   ) => (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "#9ca3af" }}>
+    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14, color: "#9ca3af" }}>
       {label}
       <select
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         style={{
           background: "#374151", color: "#e5e7eb", border: "1px solid #4b5563",
-          borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: "pointer",
+          borderRadius: 6, padding: "6px 10px", fontSize: 15, cursor: "pointer",
         }}
       >
         {options.map((o) => (
@@ -114,7 +114,7 @@ export default function Controls({
       </div>
 
       {/* Status badge */}
-      <div style={{ marginLeft: "auto", fontSize: 12, color: "#6b7280", alignSelf: "center" }}>
+      <div style={{ marginLeft: "auto", fontSize: 14, color: "#6b7280", alignSelf: "center" }}>
         {!isRunning && <span style={{ color: "#6b7280" }}>● Not started</span>}
         {isRunning && !isDone && (
           <span style={{ color: "#f59e0b" }}>● Running — step or run full</span>

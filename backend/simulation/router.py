@@ -60,7 +60,7 @@ async def start_simulation(req: StartRequest):
     _, box_seq = _build_seq(req.num_destinations, req.total_boxes)
     path = csv if req.load_csv else ""
 
-    for engine in (smart_engine, naive_engine, optimal_engine):
+    for engine in (naive_engine, smart_engine, optimal_engine):
         engine.initialize(
             num_destinations=req.num_destinations,
             total_boxes=req.total_boxes,
@@ -106,7 +106,7 @@ async def run_full(background_tasks: BackgroundTasks, batch: int = 100):
         raise HTTPException(status_code=400, detail="Not initialised — call /start first")
 
     def _run():
-        for e in (smart_engine, naive_engine, optimal_engine):
+        for e in (naive_engine, smart_engine, optimal_engine):
             if not e.is_done:
                 e.run_full(batch)
 
@@ -212,7 +212,7 @@ async def compare_all(
     _, box_seq = _build_seq(num_destinations, total_boxes)
     path = csv if load_csv else ""
 
-    for e in (smart_engine, naive_engine, optimal_engine):
+    for e in (naive_engine, smart_engine, optimal_engine):
         e.initialize(
             num_destinations=num_destinations,
             total_boxes=total_boxes,

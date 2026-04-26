@@ -109,14 +109,14 @@ export const siloApi = {
 
   reset: () => api.post("/api/simulation/reset"),
 
-  getAisleState: (aisle: string, useSmart = true) =>
+  getAisleState: (aisle: string, mode: "smart" | "naive" | "optimal" = "smart") =>
     api.get<AisleState>("/api/silo/state", {
-      params: { aisle, use_smart: useSmart },
+      params: { aisle, mode },
     }),
 
-  getPallets: (useSmart = true) =>
-    api.get("/api/silo/pallets", { params: { use_smart: useSmart } }),
+  getPallets: (mode: "smart" | "naive" | "optimal" = "smart") =>
+    api.get("/api/silo/pallets", { params: { mode } }),
 
-  getShuttles: (useSmart = true) =>
-    api.get("/api/silo/shuttles", { params: { use_smart: useSmart } }),
+  getShuttles: (mode: "smart" | "naive" | "optimal" = "smart") =>
+    api.get("/api/silo/shuttles", { params: { mode } }),
 };
