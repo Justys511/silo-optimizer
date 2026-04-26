@@ -156,17 +156,10 @@ async def compare():
                 "unit": "pallets",
             },
             {
-                "metric": "Full Pallets %",
-                "naive":   round(n["full_pallets_pct"], 1),
-                "smart":   round(s["full_pallets_pct"], 1),
-                "optimal": round(o["full_pallets_pct"], 1),
-                "unit": "%",
-            },
-            {
                 "metric": "Throughput (p/hr)",
-                "naive":   round(n["throughput_per_hour"], 1),
-                "smart":   round(s["throughput_per_hour"], 1),
-                "optimal": round(o["throughput_per_hour"], 1),
+                "naive":   round(n["throughput_per_hour"], 2),
+                "smart":   round(s["throughput_per_hour"], 2),
+                "optimal": round(o["throughput_per_hour"], 2),
                 "unit": "p/hr",
             },
             {
@@ -175,6 +168,27 @@ async def compare():
                 "smart":   round(s["avg_time_per_pallet"], 0),
                 "optimal": round(o["avg_time_per_pallet"], 0),
                 "unit": "s",
+            },
+            {
+                "metric": "Worst-case Pallet (s)",
+                "naive":   round(n["worst_case_pallet_s"], 0),
+                "smart":   round(s["worst_case_pallet_s"], 0),
+                "optimal": round(o["worst_case_pallet_s"], 0),
+                "unit": "s",
+            },
+            {
+                "metric": "Pallet Time Stddev (s)",
+                "naive":   round(n["pallet_time_stddev"], 0),
+                "smart":   round(s["pallet_time_stddev"], 0),
+                "optimal": round(o["pallet_time_stddev"], 0),
+                "unit": "s",
+            },
+            {
+                "metric": "Peak Occupancy",
+                "naive":   round(n["peak_occupancy_pct"], 1),
+                "smart":   round(s["peak_occupancy_pct"], 1),
+                "optimal": round(o["peak_occupancy_pct"], 1),
+                "unit": "%",
             },
         ],
     }

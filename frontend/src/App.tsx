@@ -141,7 +141,7 @@ export default function App() {
         {/* View-mode toggle */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6,
                       background: "#1f2937", borderRadius: 8, padding: "4px 6px" }}>
-          {(["optimal", "smart", "naive"] as ViewMode[]).map((m) => (
+          {(["naive", "smart", "optimal"] as ViewMode[]).map((m) => (
             <button key={m} onClick={() => setViewMode(m)} style={{
               padding: "5px 13px", borderRadius: 6, border: "none", cursor: "pointer",
               background: viewMode === m ? ALGO_COLORS[m] + "cc" : "transparent",
@@ -175,6 +175,7 @@ export default function App() {
           smartMetrics={smartMetrics}
           naiveMetrics={naiveMetrics}
           optimalMetrics={optimalMetrics}
+          viewMode={viewMode}
         />
       </div>
 

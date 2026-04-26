@@ -90,7 +90,9 @@ def place_box_optimal(
                                 z1 = make_pos(aisle, side, x, y, 1)
                                 if grid.get(z1) is None:
                                     continue
-                            score = (20 + sx + x) - cluster * 5
+                            travel_cost = 20 + sx + x
+                            cluster_bonus = min(cluster * 5, travel_cost - 20)
+                            score = travel_cost - cluster_bonus  # >= 20
                             if score < best_score:
                                 best_score = score
                                 best_pos = p

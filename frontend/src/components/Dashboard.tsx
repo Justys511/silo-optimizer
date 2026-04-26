@@ -7,6 +7,7 @@ interface Props {
   smartMetrics:   Metrics | null;
   naiveMetrics:   Metrics | null;
   optimalMetrics: Metrics | null;
+  viewMode: "smart" | "naive" | "optimal";
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -45,22 +46,6 @@ function MetricCard({ label, values, sub }: {
   );
 }
 
-function ImprovementBadge({ label, pct, lowerIsBetter = false }: {
-  label: string; pct: number; lowerIsBetter?: boolean;
-}) {
-  const positive = lowerIsBetter ? pct > 0 : pct > 0;
-  const color = positive ? "#22c55e" : "#ef4444";
-  const arrow = positive ? "▲" : "▼";
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <div style={{ color: "#9ca3af", fontSize: 10 }}>{label}</div>
-      <div style={{ color, fontWeight: 700, fontSize: 15, fontFamily: "monospace" }}>
-        {arrow} {Math.abs(pct)}%
-      </div>
-    </div>
-  );
-}
-
 function PalletBar({ dest, count, target }: { dest: string; count: number; target: number }) {
   const pct = Math.min((count / target) * 100, 100);
   const color = pct >= 100 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#3b82f6";
@@ -80,9 +65,9 @@ function PalletBar({ dest, count, target }: { dest: string; count: number; targe
 // ── main component ────────────────────────────────────────────────────────────
 
 export default function Dashboard({
-  smartMetrics: s, naiveMetrics: n, optimalMetrics: o,
+  smartMetrics: s, naiveMetrics: n, optimalMetrics: o, viewMode,
 }: Props) {
-  const any = s || n || o;
+  const active = viewMode === "naive" ? n : viewMode === "optimal" ? o : s;
 
   const mv = (algo: "naive" | "smart" | "optimal", m: Metrics | null, key: keyof Metrics) =>
     m ? { algo, val: m[key] as string | number } : null;
@@ -112,19 +97,26 @@ export default function Dashboard({
         <Badge label="Optimal (Hungarian + Hot/Cold + EMA)" color={ALGO_COLORS.optimal} />
       </div>
 
-      {/* ── Metric cards ── */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+      {/* ── Metric cards row 1: core throughput ── */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
         {row("Completed Pallets",   "completed_pallets")}
         {row("Full Pallets %",      "full_pallets_pct",    (v) => `${v}%`)}
         {row("Throughput (p/hr)",   "throughput_per_hour", (v) => v)}
         {row("Avg Time/Pallet (s)", "avg_time_per_pallet", (v) => Math.round(v))}
       </div>
 
+      {/* ── Metric cards row 2: consistency & utilization ── */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        {row("Worst-case Pallet (s)", "worst_case_pallet_s", (v) => Math.round(v), "max single pallet time")}
+        {row("Pallet Stddev (s)",     "pallet_time_stddev",  (v) => Math.round(v), "lower = more predictable")}
+        {row("Peak Occupancy %",      "peak_occupancy_pct",  (v) => `${v}%`,       "max silo fill reached")}
+      </div>
+
       {/* ── Silo status bar ── */}
-      {s && (() => {
-        const occPct = Math.round((s.occupied_cells / s.total_cells) * 100);
-        const dropped = s.boxes_arrived - s.boxes_placed;
-        const dropPct = s.boxes_arrived > 0 ? Math.round(dropped / s.boxes_arrived * 100) : 0;
+      {active && (() => {
+        const occPct = Math.round((active.occupied_cells / active.total_cells) * 100);
+        const dropped = active.boxes_arrived - active.boxes_placed;
+        const dropPct = active.boxes_arrived > 0 ? Math.round(dropped / active.boxes_arrived * 100) : 0;
         const occColor = occPct >= 95 ? "#ef4444" : occPct >= 80 ? "#f59e0b" : "#22c55e";
         return (
           <div style={{ background: "#1f2937", borderRadius: 10, padding: "12px 16px", marginBottom: 12 }}>
@@ -132,8 +124,8 @@ export default function Dashboard({
               {/* occupancy */}
               <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>
-                  <span>Silo Occupancy</span>
-                  <span style={{ color: occColor, fontWeight: 700 }}>{occPct}% · {s.occupied_cells} / {s.total_cells}</span>
+                  <span>Silo Occupancy — {viewMode}</span>
+                  <span style={{ color: occColor, fontWeight: 700 }}>{occPct}% · {active.occupied_cells} / {active.total_cells}</span>
                 </div>
                 <div style={{ background: "#374151", borderRadius: 4, height: 8 }}>
                   <div style={{ width: `${occPct}%`, background: occColor, height: "100%", borderRadius: 4, transition: "width 0.4s" }} />
@@ -148,9 +140,9 @@ export default function Dashboard({
               <div>
                 <div style={{ color: "#9ca3af", fontSize: 11, marginBottom: 2 }}>Boxes Arrived / Placed / Dropped</div>
                 <div style={{ fontSize: 13, fontFamily: "monospace" }}>
-                  <span style={{ color: "#e5e7eb" }}>{s.boxes_arrived}</span>
+                  <span style={{ color: "#e5e7eb" }}>{active.boxes_arrived}</span>
                   <span style={{ color: "#6b7280" }}> / </span>
-                  <span style={{ color: "#22c55e" }}>{s.boxes_placed}</span>
+                  <span style={{ color: "#22c55e" }}>{active.boxes_placed}</span>
                   <span style={{ color: "#6b7280" }}> / </span>
                   <span style={{ color: dropped > 0 ? "#ef4444" : "#6b7280", fontWeight: dropped > 0 ? 700 : 400 }}>
                     {dropped}{dropped > 0 ? ` (${dropPct}%)` : ""}
@@ -162,19 +154,19 @@ export default function Dashboard({
         );
       })()}
 
-      {/* ── Active pallets (smart) ── */}
+      {/* ── Active pallets ── */}
       <div style={{ background: "#1f2937", borderRadius: 10, padding: 14, marginBottom: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "#d1d5db" }}>
-          Active Pallets — Smart
+          Active Pallets — {viewMode.charAt(0).toUpperCase() + viewMode.slice(1)}
         </div>
-        {!s || s.active_pallets.length === 0
+        {!active || active.active_pallets.length === 0
           ? <div style={{ color: "#6b7280", fontSize: 12 }}>No active pallets</div>
-          : s.active_pallets.map((p) => (
+          : active.active_pallets.map((p) => (
               <PalletBar key={p.destination} dest={p.destination} count={p.count} target={p.target} />
             ))}
       </div>
 
-      {/* ── Progress bar (smart engine) ── */}
+      {/* ── Progress bar (all engines) ── */}
       {s && (
         <div style={{ marginTop: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af", marginBottom: 3 }}>

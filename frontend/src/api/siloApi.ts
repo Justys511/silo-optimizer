@@ -37,6 +37,9 @@ export interface Metrics {
   total_time: number;
   avg_time_per_pallet: number;
   throughput_per_hour: number;
+  peak_occupancy_pct: number;
+  worst_case_pallet_s: number;
+  pallet_time_stddev: number;
   occupied_cells: number;
   total_cells: number;
   active_pallets: PalletInfo[];

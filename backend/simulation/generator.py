@@ -10,6 +10,7 @@ Box arrival rate: 1 000 boxes / hour = 1 box every 3.6 simulated seconds.
 from __future__ import annotations
 
 import csv as csv_module
+import math
 import random
 import uuid
 from collections import defaultdict
@@ -62,6 +63,25 @@ def _build_empty_grid() -> Dict[str, Optional[str]]:
     return g
 
 
+def _parse_csv_pos(raw: str) -> str:
+    """Convert either 10-digit or 11-digit CSV position to internal 10-digit format.
+
+    Old CSV (10 digits): aisle(2) side(2) x(2) y(2) z(2)  e.g. 1010010101
+    New CSV (11 digits): aisle(2) side(2) x(3) y(2) z(2)  e.g. 01010010101
+      where aisle encodes as 01→10, 02→20, 03→30, 04→40
+      and   side  encodes as 01→10, 02→20
+    """
+    if len(raw) == 10:
+        return raw
+    # 11-digit new format
+    aisle_num = int(raw[0:2])   # 01-04
+    side_num  = int(raw[2:4])   # 01-02
+    x         = int(raw[4:7])   # 001-060
+    y         = int(raw[7:9])   # 01-08
+    z         = int(raw[9:11])  # 01-02
+    return make_pos(f"{aisle_num * 10:02d}", f"{side_num * 10:02d}", x, y, z)
+
+
 def load_csv_state(
     csv_path: str,
     grid: Dict[str, Optional[str]],
@@ -72,9 +92,9 @@ def load_csv_state(
     count = 0
     with open(csv_path, "r") as f:
         for row in csv_module.DictReader(f):
-            pos   = row["posicion"].strip()
+            pos   = _parse_csv_pos(row["posicion"].strip())
             label = row["etiqueta"].strip()
-            if label:
+            if label and pos in grid:
                 raw  = str(int(Decimal(label))).zfill(20)
                 dest = rng.choice(dest_pool)
                 grid[pos] = raw[:7] + dest + raw[15:]
@@ -114,6 +134,8 @@ class SimulationEngine:
         self._box_seq:           List[str] = []
         self._seq_idx:           int   = 0
         self._csv_path:          str   = ""
+        self._current_occupied:  int   = 0
+        self._peak_occupied:     int   = 0
         # optimal-mode extras
         self.ema = EMATracker(alpha=0.3) if self.mode == "optimal" else None
 
@@ -141,6 +163,9 @@ class SimulationEngine:
         self.grid = _build_empty_grid()
         if csv_path:
             load_csv_state(csv_path, self.grid, self.destinations)
+
+        self._current_occupied = sum(1 for v in self.grid.values() if v is not None)
+        self._peak_occupied    = self._current_occupied
 
         if box_seq is not None:
             self._box_seq = box_seq
@@ -191,8 +216,11 @@ class SimulationEngine:
 
             if pos:
                 self.grid[pos] = code
-                self.boxes_placed     += 1
-                self.total_input_time += cost
+                self.boxes_placed        += 1
+                self.total_input_time    += cost
+                self._current_occupied   += 1
+                if self._current_occupied > self._peak_occupied:
+                    self._peak_occupied = self._current_occupied
 
         # EMA clock tick
         if self.mode == "optimal" and self.ema:
@@ -224,6 +252,7 @@ class SimulationEngine:
         running_out = self.total_output_time
         for code, pos, cost in ops:
             self.grid[pos] = None
+            self._current_occupied -= 1
             running_out += cost
             dest = code[7:15]
             if dest not in self.active_pallets:
@@ -260,27 +289,40 @@ class SimulationEngine:
 
     def get_metrics(self) -> Dict:
         n    = len(self.completed_pallets)
-        # % of retrieved boxes that ended up in a completed pallet
-        # (vs wasted on partial pallets still in progress)
         boxes_in_completed = n * PALLET_SIZE
         retrieval_efficiency = round(
             boxes_in_completed / max(self.boxes_retrieved, 1) * 100, 1
         )
         total_time = self.total_input_time + self.total_output_time
 
+        # Pallet completion interval stats (inter-pallet output time gaps)
+        worst_case_pallet_s = 0.0
+        pallet_time_stddev  = 0.0
+        if self.completed_pallets:
+            times = [p["completed_at"] for p in self.completed_pallets]
+            intervals = [times[0]] + [times[i] - times[i - 1] for i in range(1, len(times))]
+            worst_case_pallet_s = max(intervals)
+            mean = sum(intervals) / len(intervals)
+            pallet_time_stddev = math.sqrt(
+                sum((t - mean) ** 2 for t in intervals) / len(intervals)
+            )
+
         return {
-            "boxes_arrived":      self.boxes_arrived,
-            "boxes_placed":       self.boxes_placed,
-            "boxes_retrieved":    self.boxes_retrieved,
-            "completed_pallets":  n,
-            "full_pallets_pct":   retrieval_efficiency,
-            "total_input_time":   round(self.total_input_time, 1),
-            "total_output_time":  round(self.total_output_time, 1),
-            "total_time":         round(total_time, 1),
-            "avg_time_per_pallet": round(self.total_output_time / max(n, 1), 1),
-            "throughput_per_hour": round(n * 3600 / max(self.total_output_time, 1), 2),
-            "occupied_cells":     sum(1 for v in self.grid.values() if v is not None),
-            "total_cells":        len(self.grid),
+            "boxes_arrived":        self.boxes_arrived,
+            "boxes_placed":         self.boxes_placed,
+            "boxes_retrieved":      self.boxes_retrieved,
+            "completed_pallets":    n,
+            "full_pallets_pct":     retrieval_efficiency,
+            "total_input_time":     round(self.total_input_time, 1),
+            "total_output_time":    round(self.total_output_time, 1),
+            "total_time":           round(total_time, 1),
+            "avg_time_per_pallet":  round(self.total_output_time / max(n, 1), 1),
+            "throughput_per_hour":  round(n * 3600 / max(self.total_output_time, 1), 2),
+            "peak_occupancy_pct":   round(self._peak_occupied / max(len(self.grid), 1) * 100, 1),
+            "worst_case_pallet_s":  round(worst_case_pallet_s, 1),
+            "pallet_time_stddev":   round(pallet_time_stddev, 1),
+            "occupied_cells":       self._current_occupied,
+            "total_cells":          len(self.grid),
             "active_pallets": [
                 {"destination": d, "count": len(boxes), "target": PALLET_SIZE}
                 for d, boxes in self.active_pallets.items()
