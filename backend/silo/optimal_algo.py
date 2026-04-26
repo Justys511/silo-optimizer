@@ -173,7 +173,7 @@ def select_active_pallets_ema(
         scores = {d: ema.predicted_count(d, c) for d, c in counts.items()}
 
     candidates = sorted(
-        [(d, s) for d, s in scores.items() if d not in active and s > 0],
+        [(d, s) for d, s in scores.items() if d not in active and counts.get(d, 0) >= 2],
         key=lambda kv: -kv[1],
     )
     for dest, _ in candidates:

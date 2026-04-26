@@ -291,10 +291,9 @@ class SimulationEngine:
 
     def get_metrics(self) -> Dict:
         n    = len(self.completed_pallets)
-        boxes_in_completed = n * PALLET_SIZE
-        retrieval_efficiency = round(
-            boxes_in_completed / max(self.boxes_retrieved, 1) * 100, 1
-        )
+        # Official metric: completed / (completed + currently_active) × 100
+        total_pallets = n + len(self.active_pallets)
+        full_pallets_pct = round(n / max(total_pallets, 1) * 100, 1)
         total_time = self.total_input_time + self.total_output_time
 
         # Pallet completion interval stats (inter-pallet output time gaps)
@@ -314,7 +313,7 @@ class SimulationEngine:
             "boxes_placed":         self.boxes_placed,
             "boxes_retrieved":      self.boxes_retrieved,
             "completed_pallets":    n,
-            "full_pallets_pct":     retrieval_efficiency,
+            "full_pallets_pct":     full_pallets_pct,
             "total_input_time":     round(self.total_input_time, 1),
             "total_output_time":    round(self.total_output_time, 1),
             "total_time":           round(total_time, 1),
