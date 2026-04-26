@@ -193,6 +193,7 @@ class SimulationEngine:
                     d = code[7:15]
                     if d in dest_set:
                         dest_counts[d] += 1
+            silo_fill_pct = self._current_occupied / max(len(self.grid), 1)
 
         # ── Place incoming boxes ──────────────────────────────────────────────
         for _ in range(n_boxes):
@@ -210,6 +211,7 @@ class SimulationEngine:
                 pos, cost = place_box_optimal(
                     self.grid, self.shuttles, code, self.destinations,
                     active_dests_set, dest_counts,
+                    silo_fill_pct=silo_fill_pct,
                 )
                 if self.ema:
                     self.ema.record_arrival(code[7:15])

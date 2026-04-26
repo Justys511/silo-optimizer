@@ -48,10 +48,13 @@ def place_box_optimal(
     destinations: List[str],
     active_dests: set,
     dest_counts: Dict[str, int],
+    silo_fill_pct: float = 0.0,
 ) -> Tuple[Optional[str], float]:
     """
     Place *box_code*:
-    - HOT (dest in active pallet): prefer X=1-20 so retrieval is fast.
+    - HOT zone (X=1-20, Z=1 only) when silo fill < 65% and dest is active.
+      Z=1 only prevents hot boxes being blocked by inactive cold boxes at Z=1.
+      Adaptive: disabled at high load to avoid hot-zone contention.
     - Everything else: Smart-style destination clustering across full X range.
     Falls back to full range if preferred zone is full.
     """
@@ -65,8 +68,10 @@ def place_box_optimal(
             a, s, x, y, z = parse_pos(pos)
             lane_cluster[(a, y)] += 1
 
-    if is_hot:
-        zone_order = [(HOT_X, [1, 2]), (range(1, 61), [1, 2])]
+    use_hot_zone = is_hot and silo_fill_pct < 0.65
+    if use_hot_zone:
+        # Z=1 only in hot zone — hot boxes must always be directly accessible
+        zone_order = [(HOT_X, [1]), (range(1, 61), [1, 2])]
     else:
         zone_order = [(range(1, 61), [1, 2])]
 
